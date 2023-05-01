@@ -1,0 +1,12 @@
+version: '3.3'
+services:
+  bot:
+    image: enquestor/military_check_in_bot
+    environment:
+      - CHANNEL_SECRET=YOUR_CHANNEL_SECRET
+      - CHANNEL_ACCESS_TOKEN=YOUR_CHANNEL_ACCESS_TOKEN
+      - REDIS_URL=redis://redis:6379
+    ports:
+      - 3000:3000
+  redis:
+    image: redis

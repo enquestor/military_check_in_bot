@@ -10,6 +10,7 @@ import {
 } from "@line/bot-sdk";
 import express, { Application, Request, Response } from "express";
 import * as dotenv from "dotenv";
+import { createClient } from "redis";
 
 dotenv.config();
 
@@ -26,10 +27,7 @@ const middlewareConfig: MiddlewareConfig = {
 
 const PORT = process.env.PORT || 3000;
 
-// Create a new LINE SDK client.
 const client = new Client(clientConfig);
-
-// Create a new Express application.
 const app: Application = express();
 
 app.post(
@@ -64,12 +62,22 @@ app.post(
   }
 );
 
-// Create a server and listen to it.
-app.listen(PORT, () => {
-  console.log(`Application is live and listening on port ${PORT}`);
+const redis = createClient({
+  url: process.env.REDIS_URL,
+});
+redis.connect().then(() => {
+  app.listen(PORT, () => {
+    console.log(`Application is live and listening on port ${PORT}`);
+  });
 });
 
-let lastMessage = "";
+const getLastMessage = (chatId: string) => {
+  return redis.get(chatId);
+};
+
+const setLastMessage = (chatId: string, message: string) => {
+  return redis.set(chatId, message);
+};
 
 const getId = (message: string) => {
   const regex = /^.*學號.*?(\d+).*$/gm;
@@ -111,19 +119,22 @@ const textEventHandler = async (
   const { text } = event.message;
   const source = event.source;
 
-  let chatId = source.type === "group" ? source.groupId : source.userId;
+  let chatId = source.type === "group" ? source.groupId : source.userId!;
+  const lastMessage = await getLastMessage(chatId);
 
-  if (text.startsWith("++")) {
+  if (text.startsWith("++") && lastMessage) {
     const added = text.substring(2).trim();
 
     try {
       const result = concatenate(lastMessage, added);
-      lastMessage = result;
 
-      await client.replyMessage(replyToken, {
-        type: "text",
-        text: result,
-      });
+      await Promise.all([
+        setLastMessage(chatId, result),
+        client.replyMessage(replyToken, {
+          type: "text",
+          text: result,
+        }),
+      ]);
     } catch (error: unknown) {
       if (error instanceof Error) {
         await client.replyMessage(replyToken, {
@@ -133,6 +144,6 @@ const textEventHandler = async (
       }
     }
   } else {
-    lastMessage = text;
+    await setLastMessage(chatId, text);
   }
 };
