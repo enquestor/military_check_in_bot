@@ -5,12 +5,27 @@ import {
   middleware,
   MiddlewareConfig,
   WebhookEvent,
-  TextMessage,
   MessageAPIResponseBase,
 } from "@line/bot-sdk";
 import express, { Application, Request, Response } from "express";
 import * as dotenv from "dotenv";
 import { createClient } from "redis";
+import { parseMessage } from "./utils";
+import { Chat, Command } from "./models";
+import {
+  about,
+  absent,
+  add,
+  configExample,
+  configFormat,
+  configIds,
+  example,
+  format,
+  help,
+  set,
+  show,
+} from "./mbot";
+import { CommandResult } from "./models/command_result";
 
 dotenv.config();
 
@@ -71,42 +86,6 @@ redis.connect().then(() => {
   });
 });
 
-const getLastMessage = (chatId: string) => {
-  return redis.get(chatId);
-};
-
-const setLastMessage = (chatId: string, message: string) => {
-  return redis.set(chatId, message);
-};
-
-const getId = (message: string) => {
-  const regex = /^.*學號.*?(\d+).*$/gm;
-  const match = regex.exec(message);
-  if (!match) {
-    throw new Error("訊息中無有效學號");
-  }
-  return match[1];
-};
-
-const concatenate = (main: string, added: string) => {
-  const signIns = main.split(/\n{2,}/g);
-  const ids = signIns.map((signIn) => getId(signIn));
-  const newId = getId(added);
-
-  if (ids.includes(newId)) {
-    throw new Error("學號重複");
-  }
-
-  // insert the new id to the correct position
-  let index = 0;
-  while (index < ids.length && ids[index] < newId) {
-    index++;
-  }
-
-  signIns.splice(index, 0, added);
-  return signIns.join("\n\n");
-};
-
 // Function handler to receive the text.
 const textEventHandler = async (
   event: WebhookEvent
@@ -120,30 +99,78 @@ const textEventHandler = async (
   const source = event.source;
 
   let chatId = source.type === "group" ? source.groupId : source.userId!;
-  const lastMessage = await getLastMessage(chatId);
-
-  if (text.startsWith("++") && lastMessage) {
-    const added = text.substring(2).trim();
-
-    try {
-      const result = concatenate(lastMessage, added);
-
-      await Promise.all([
-        setLastMessage(chatId, result),
-        client.replyMessage(replyToken, {
-          type: "text",
-          text: result,
-        }),
-      ]);
-    } catch (error: unknown) {
-      if (error instanceof Error) {
-        await client.replyMessage(replyToken, {
-          type: "text",
-          text: `錯誤：${error.message}`,
-        });
-      }
+  let chat: Chat | undefined;
+  try {
+    const chatString = await redis.get(chatId);
+    if (chatString) {
+      chat = JSON.parse(chatString);
     }
-  } else {
-    await setLastMessage(chatId, text);
+  } catch {}
+
+  if (!chat) {
+    chat = {
+      checkIns: [],
+      format: "",
+      example: "",
+      ids: [],
+    };
   }
+
+  const commandResult = await handleMessage(chat, text);
+
+  const tasks: Promise<any>[] = [];
+  if (commandResult.chat) {
+    tasks.push(redis.set(chatId, JSON.stringify(commandResult.chat)));
+  }
+  if (commandResult.reply) {
+    tasks.push(
+      client.replyMessage(replyToken, {
+        type: "text",
+        text: commandResult.reply,
+      })
+    );
+  }
+
+  await Promise.all(tasks);
+};
+
+const handleMessage = async (
+  chat: Chat,
+  text: string
+): Promise<CommandResult> => {
+  try {
+    const parsedMessage = parseMessage(text);
+    console.log(parsedMessage);
+
+    switch (parsedMessage.command) {
+      case Command.Add:
+        return add(chat, parsedMessage.message);
+      case Command.Set:
+        return set(chat, parsedMessage.message);
+      case Command.Show:
+        return show(chat);
+      case Command.Absent:
+        return absent(chat);
+      case Command.Help:
+        return help();
+      case Command.About:
+        return about();
+      case Command.Format:
+        return format(chat);
+      case Command.Example:
+        return example(chat);
+      case Command.ConfigFormat:
+        return configFormat(chat, parsedMessage.message);
+      case Command.ConfigExample:
+        return configExample(chat, parsedMessage.message);
+      case Command.ConfigIds:
+        return configIds(chat, parsedMessage.message);
+    }
+  } catch (error: unknown) {
+    if (error instanceof Error) {
+      return { reply: error.message };
+    }
+  }
+
+  return {};
 };
