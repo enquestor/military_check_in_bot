@@ -140,7 +140,6 @@ const handleMessage = async (
 ): Promise<CommandResult> => {
   try {
     const parsedMessage = parseMessage(text);
-    console.log(parsedMessage);
 
     switch (parsedMessage.command) {
       case Command.Add:

@@ -8,5 +8,9 @@ services:
       - REDIS_URL=redis://redis:6379
     ports:
       - 3000:3000
+    depends_on:
+      - redis
   redis:
     image: redis
+    volumes:
+      - ./data:/data
