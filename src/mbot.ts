@@ -80,7 +80,7 @@ export function absent(chat: Chat): CommandResult {
 export function help(): CommandResult {
   return {
     reply:
-      "指令列表：\n\n++：簽到\n==：清除/設定簽到記錄\n>>：顯示完整簽到訊息\n--：顯示未簽到成員\n@@：顯示幫助訊息",
+      "指令列表：\n\n++：簽到\n==：清除/設定簽到記錄\n>>：顯示完整簽到訊息\n--：顯示未簽到成員\n??：顯示簽到格式\n!!：顯示簽到範例\n@@：顯示幫助訊息",
   };
 }
 
